@@ -291,8 +291,6 @@ plt.grid()
 # En primer lugar a partir de los datos extraidos graficaremos las curvas de tension de entrada y corriente y tension en el capacitor. Para ello extraemos datos del archivo .xls
 
 # %%
-
-
 df= pd.read_excel('Curvas_Medidas_RLC_2024.xls') # extraigo datos de xls
 
 t = df.iloc[:, 0] #selecciono primera columna y todas sus filas, guardo como variable t
@@ -324,7 +322,6 @@ plt.ylabel('Vc_t')
 plt.legend()
 plt.grid(True)
 
-mplcursors.cursor(hover=True)
 plt.show()
 
 plt.subplots_adjust(hspace = 0.5)  # Ajustar el espacio entre los subplot
@@ -337,7 +334,7 @@ plt.ylabel('Vinc_t')
 plt.legend()
 plt.grid(True)
 
-mplcursors.cursor(hover=True)
+
 plt.show()
 
 
@@ -387,10 +384,10 @@ plt.show()
 # 
 # Basandonos en los recursos de Identificacion.ipynb brindados en clase
 # 
-# Como nos indica el metodo debemos definir un intervalo de tiempo $t_1$ que será usado de referencia, que es lo que se nos pide en el metodo de de chen.
+# Como nos indica el metodo debemos definir un intervalo de tiempo $t_1$ que será usado de referencia, que es lo que se nos pide en el metodo de de chen. En primer lugar debemos detectar nuestro t1 de referencia, para ello con ayuda de graficas interactivas podremos expandir nuestros graficos y obtener aproximadamente nuestro t1 que luego integrara el algoritmo de Chen
 # 
 
-# %% [markdown]
+# %%
 import plotly.graph_objects as go
 import pandas as pd
 
@@ -413,7 +410,7 @@ fig1.add_trace(go.Scatter(
 ))
 
 fig1.update_layout(
-    title='Dinámica del sistema',
+  
     xaxis_title='Tiempo (t)',
     yaxis_title='ic_t',
 )
@@ -432,7 +429,7 @@ fig2.add_trace(go.Scatter(
 ))
 
 fig2.update_layout(
-    title='Dinámica del sistema',
+    
     xaxis_title='Tiempo (t)',
     yaxis_title='Vc_t',
 )
@@ -451,10 +448,223 @@ fig3.add_trace(go.Scatter(
 ))
 
 fig3.update_layout(
-    title='Dinámica del sistema',
+ 
     xaxis_title='Tiempo (t)',
     yaxis_title='Vin_t',
 )
 
-fig3.show()
+# %% [markdown]
+# Con el objetivo de tomar bien la dinamica del sistema tomamos un t1=0.01 (despreciando retardo)
+# Basandonos en el recurso dado en clase:
+# 
+# $y(t1)=y(0.01)=10.6$
+# 
+# $y(2t1)=y(0.02)=11.88$
+# 
+# $y(3t1)=y(0.03)=11.99$
+# 
+
 # %%
+yt_1 = 10.6
+yt_2 = 11.88
+yt_3 = 11.99
+K = 12
+
+k_1 = (yt_1 / K) - 1
+k_2 = (yt_2 / K) - 1
+k_3 = (yt_3 / K) - 1
+
+print('k_1: {:.2e}'.format(k_1))
+print('k_2: {:.2e}'.format(k_2))
+print('k_3: {:.2e}'.format(k_3))
+
+
+# %% [markdown]
+# Con dichos resultados la resolucion consiste en encontrar las constantes , que luego nos permitiran encontrar las constantes del sistema
+# 
+
+# %%
+be = 4 * (k_1**3) * k_3 - 3 * (k_1**2) * (k_2**2) - 4 * (k_2**3) + (k_3**2) + 6 * k_1 * k_2 * k_3
+
+
+alpha_1 = (k_1 * k_2 + k_3 - np.sqrt(be)) / (2 * (k_1**2 + k_2))
+alpha_2 = (k_1 * k_2 + k_3 + np.sqrt(be)) / (2 * (k_1**2 + k_2))
+#beta = (2 * k_1**3 + 3 * k_1 * k_2 + k_3 - np.sqrt(be)) / (np.sqrt(be))
+
+beta=(k_1+alpha_2)/(alpha_1-alpha_2)
+
+print('be: {:.2e}'.format(be))
+print('alpha_1: {:.2e}'.format(alpha_1))
+print('alpha_2: {:.2e}'.format(alpha_2))
+print('beta: {:.2e}'.format(beta))
+
+
+# %% [markdown]
+# Estimamos entonces las constantes del sistema
+# 
+# 
+
+# %%
+t_1 = 0.0054
+T_1 = -t_1 / np.log(alpha_1)
+T_2 = -t_1 / np.log(alpha_2)
+T_3 = beta * (T_1 - T_2) + T_1
+
+print('T_1: {:.2e}'.format(T_1))
+print('T_2: {:.2e}'.format(T_2))
+print('T_3: {:.2e}'.format(T_3))
+
+# %% [markdown]
+# Una vez determinado las constantes puedo determinar la FT
+
+# %%
+
+t_s= np.linspace(0, 0.03, 1000)
+
+
+# Crear la función de transferencia utilizando control.tf()#
+sys_G = K*ct.tf([0, 1],np.convolve([T_1, 1],[T_2, 1]))
+
+
+# Calcular la respuesta al escalón del sistema identificado#
+y_id , t_id = step(1*sys_G, t_s)
+
+# Agregar un retraso a la respuesta al escalón
+delay = 0.01  # Retraso en segundos
+t_id_delayed = t_id + delay
+
+print(sys_G)
+
+
+plt.plot(t_id_delayed, y_id)
+
+plt.xlabel('Time')
+plt.ylabel('Step Response')
+plt.title('Respuesta al escalon G identificada')
+plt.grid(True)
+plt.show()
+
+
+
+# %% [markdown]
+# Superponiendo con la grafica anteriormente obtendia a partir del archivo .xls
+
+# %%
+# Graficar Vc_t
+plt.figure(figsize=(10, 10))
+plt.subplot(3, 1, 2)
+plt.plot(t, Vc_t, 'r-', label='Vc_t_medidas')
+plt.xlabel('Tiempo (t)')
+plt.ylabel('Vc_t')
+plt.legend()
+plt.grid(True)
+
+# Graficar la respuesta al escalón del sistema identificado
+plt.plot(t_id_delayed, y_id, label='Respuesta al escalón G identificada')
+plt.xlabel('Tiempo')
+plt.ylabel('Respuesta al escalón')
+plt.title('Superposición de gráficos')
+plt.grid(True)
+plt.legend()
+plt.show()
+
+# %%
+import plotly.graph_objects as go
+
+# Crear el gráfico para Vc_t y la respuesta al escalón del sistema identificado
+fig = go.Figure()
+
+# Agregar trazo para Vc_t
+fig.add_trace(go.Scatter(
+    x=t,
+    y=Vc_t,
+    mode='lines',
+    name='Vc_t',
+    hovertemplate='Tiempo: %{x:.2f}s, Vc_t: %{y:.2f}',
+))
+
+# Agregar trazo para la respuesta al escalón del sistema identificado
+fig.add_trace(go.Scatter(
+    x=t_id_delayed,
+    y=y_id,
+    mode='lines',
+    name='Respuesta al escalón G identificada',
+    hovertemplate='Tiempo: %{x:.2f}s, Respuesta al escalón: %{y:.2f}',
+))
+
+fig.update_layout(
+    xaxis_title='Tiempo (t)',
+    yaxis_title='Vc_t / Respuesta al escalón',
+)
+
+fig.show()
+
+# %% [markdown]
+# ### Determinacion Parámetro RLC
+# 
+# Teniendo en cuenta los valores obtenidos de las graficas de datos, vemos que tenemos una tension de 12V y aproximadamente 40mA de pico de corriente, lo que nos permite estimar un valor de R . Tomaremos un valor de R=270
+# 
+# A partir de la FdT obtenemos como dato que
+# 
+# $LC=2.503e-6$
+# 
+# $CR=3.324e-3$
+# 
+#     
+
+# %%
+print(L)
+print(C)
+
+# %% [markdown]
+# ## Ítem [3] 
+# Una vez determinados los parámetros R, L y C, emplear la serie de corriente desde 0.05seg en adelante para validar el resultado superponiendo las gráficas.
+
+# %%
+from scipy.interpolate import interp1d
+
+# Definir los valores de R, L y C
+R = 270  
+L = 203e-3
+C = 12.3e-6
+
+df= pd.read_excel('Curvas_Medidas_RLC_2024.xls') # extraigo datos de xls
+
+t = df.iloc[:, 0] #selecciono primera columna y todas sus filas, guardo como variable t
+Vin_t= df.iloc[:, 3]
+
+
+# Interpolar los datos de entrada
+Vin_t_func = interp1d(t, Vin_t, fill_value="extrapolate")
+
+# Crear un arreglo de tiempo para la simulación
+t_sim = np.linspace(0, max(t), len(t))
+
+# Crear la señal de entrada para la simulación
+u = Vin_t_func(t_sim)
+
+
+A=[[-R/L, -1/L], [1/C, 0]]
+B=[[1/L], [0]]
+C=[[1, 0]] #Matriz para medir corriente
+D=[[0]]
+
+sys = signal.StateSpace(A, B, C, D)
+
+# Simular la respuesta del sistema
+t1,y1,x1= signal.lsim(sys,u, t) # simular sistemas lineales e invariantes en el tiempo (LTI)
+
+# Visualizar la salida del sistema
+plt.figure(figsize=(10, 10))
+
+# Plot both the simulated current and the measured current on the same subplot
+plt.plot(t1, y1, 'b-', linewidth=2.5, label='Corriente simulada')
+plt.plot(t, ic_t, 'r-', linewidth=2.5, label='Corriente medida')
+
+plt.grid()
+plt.title('Dinamica Sistema')
+plt.xlabel('Tiempo [seg]')
+plt.ylabel('Corriente [A]')
+plt.legend()
+
+plt.show()
